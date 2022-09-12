@@ -1,0 +1,189 @@
+#!/usr/bin/bash
+function usage() {
+	echo "MDPM(multi distribution package manager)"
+	echo "Usage:"
+	echo " mdpm [OPTION] arguments"
+	echo "Options"
+	echo " install    install packages"
+	if [[ $distro == "FreeBSD" ]]
+	then
+		echo " delete     remove packages"
+	elif [[ $pm == "apk" ]]
+	then
+		echo " del        remove packages"
+	else
+		echo " remove     remove packages"
+	fi
+	[[ $distro != "FreeBSD" ]] && \
+	echo " purge      remove packages with dependencies"
+	if [[ $distro != "Android" ]] && [[ $pm != "dnf" ]]
+	then
+		echo " update     update packages"
+	fi
+	if [[ $pm == "apt" ]] || [[ $pm == "apk" ]] || [[ $pm == "pkg" ]] || [[ $pm == "zypper" ]]
+	then
+		echo " upgrade    upgrade packages"
+	fi
+	if [[ $pm == "pacman" ]] || [[ $pm == "yay" ]]
+	then
+		echo " removecfg  remove packages with their configurations"
+		echo " purgecfg   remove packages with their configurations and dependencies"
+	fi
+	if [[ $pm == "apt" ]] || [[ $pm == "pkg" ]] || [[ $pm == "dnf" ]]
+	then
+		echo " autoremove remove unused packages"
+	fi
+	echo " info       show information about packages"
+	if [[ $pm == "xbps-" ]]
+	then
+		echo " repos      show the list of connected repositories"
+		echo " alt        show the list of alternatives"
+	fi
+	echo " list       show the list of installed packages"
+	echo
+	echo " help       show this message"
+	echo " version    show version"
+}
+function check_bin() {
+	[[ -n $(command -v $1) ]]
+}
+function get_distro() {
+	local tmpifs=$IFS
+	IFS="
+	"
+	local lns=$(cat /etc/os-release | grep NAME)
+	for i in $lns
+	do
+		lns=$i
+		break
+	done
+	IFS=$tmpifs
+	local len_str=$(expr length "$lns")
+	local len_str=$((len_str-7))
+	echo ${lns:6:$len_str}
+}
+os=$(uname)
+unama=$(uname -o)
+[[ $unama == "Android" ]] && os=$unama
+if [[ $os == "Linux" ]]
+then
+	distro=$(get_distro)
+else
+	distro=$os
+fi
+pms="pkg apt apk pacman yay xbps-install brew slackpkg dnf zypper no-pm"
+for pm in $pms
+do
+	check_bin $pm && break
+done
+[[ $pm == "xbps-install" ]] && pm="xbps-"
+xc=$pm
+if [[ -z $1 ]] || [[ $1 == "help" ]]
+then
+	usage
+	exit 0
+elif [[ $1 == "version" ]]
+then
+	echo "0.1.0"
+	exit 0
+fi
+case $pm in
+	pacman|yay)
+		case $1 in
+			install|update)
+				xc+=" -S"
+				[[ $1 == "update" ]] && xc+="u"
+			;;
+			remove)
+				xc+=" -R"
+			;;
+			purge)
+				xc+=" -Rs"
+			;;
+			removecfg)
+				xc+=" -Rc"
+			;;
+			purgecfg)
+				xc+=" -Rsc"
+			;;
+			info)
+				xc+=" -Si"
+			;;
+			search)
+				xc+=" -Ss"
+			;;
+			list)
+				xc+=" -Q"
+			;;
+			file)
+				xc+=" -F"
+			;;
+			*)
+				echo "Unsupported command for $pm: $1"
+				exit 1
+		esac
+	;;
+	apt|pkg|dnf|zypper)
+		if [[ $distro == "FreeBSD" ]] && [[ $1 == "purge" ]]
+		then
+			echo "Unsupported command for $pm: $1"
+			exit 1
+		else
+			if [[ $pm == "zypper" ]] && [[ $1 == "upgrade" ]]
+			then
+				xc+=" dup"
+			else
+				xc+=" $1"
+			fi
+		fi
+	;;
+	apk)
+		case $1 in
+			install)
+				xc+=" add"
+			;;
+			remove)
+				xc+=" del"
+			;;
+			*)
+				xc+=" $1"
+			;;
+		esac
+	;;
+	xbps-)
+		case $1 in
+			install|update)
+				xc+="install -S"
+				[[ $1 == "update" ]] && xc+="u"
+			;;
+			remove|purge)
+				xc+="remove"
+				[[ $1 == "purge" ]] && xc+=" -R"
+			;;
+			search)
+				xc+="query -Rs"
+			;;
+			file)
+				xc+="query -f"
+			;;
+			repos)
+				xc+="query -L"
+			;;
+			alt)
+				xc+="alternatives -l"
+			;;
+			*)
+				echo "Unsupported command for $pm: $1"
+				exit 1
+			;;
+		esac
+	;;
+	*)
+		echo "No package manager for $distro"
+		exit 1
+	;;
+esac
+shift
+xc+=" $*"
+$xc
+exit $?
